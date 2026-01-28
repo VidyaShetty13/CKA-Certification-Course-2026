@@ -28,6 +28,20 @@ If this **repository** helps you, give it a ⭐ to show your support and help ot
 - While Docker helps package and run individual containers, Kubernetes orchestrates and manages multiple containers across many machines.
 - Kubernetes automates deployment, scaling, and operations of containerized applications, enabling high availability, load balancing, and self-healing.
 
+### Why Kubernetes is called K8s?
+KuberneteS -> K is the starting letter, s is the ending letter, and between K and S there are 8 letters
+
+### What is the difference between updating the application and upgrading the application?
+An update is a "patch" designed to keep the current version of your software running smoothly.
+Security Patches: Fixing a vulnerability that hackers could exploit.
+Bug Fixes: Solving that annoying glitch where the app crashes when you hit "save."
+Minor Enhancements: Adding support for a new file type or a slightly faster loading speed.
+
+An upgrade is a significant leap forward. It usually involves moving to a completely new version of the product that might look or feel very different.
+New Functionality: For example, adding AI tools to a photo editor that previously didn't have them
+Redesign: A total makeover of the user interface (UI).
+System Requirements: Upgrades often require newer hardware because they use more processing power.
+
 ## Kubernetes vs Docker Swarm vs Docker Compose
 
 | **Feature**           | **Kubernetes**                                                                 | **Docker Swarm**                                                  | **Docker Compose**                                                            |
