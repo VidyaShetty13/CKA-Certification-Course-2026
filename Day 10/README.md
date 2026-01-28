@@ -489,7 +489,7 @@ Re-check the rollout history to confirm that the Deployment is rolled back to th
 
 ## **5. Extra Questions**
 
-### **How can you remove the controller without killing the Pods, and what happens to those Pods once the controller is gone?
+### **How can you remove the controller without killing the Pods, and what happens to those Pods once the controller is gone?**
 
 - use the `Orphan Deletion Policy`. By running the command kubectl delete deploy <name> --cascade=orphan, I tell the Kubernetes API server to delete the 'parent' object (the DeploymentController) but to ignore the 'ownerReference' links on the children.
 - Once the command finishes, the Pods become Orphans. They continue to run and handle traffic exactly as before. However, they are no longer managed. If one of those Pods crashes, no controller will be there to restart it, and if the load increases, they won't scale.
