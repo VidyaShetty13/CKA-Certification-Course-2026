@@ -272,6 +272,31 @@ The **Kubelet** on the assigned node monitors the API Server for changes to Pod 
    - The **API Server updates the Pod's status** in etcd to reflect the current state of the containers.  
 ---
 
+### List Controllers present in the controller manager
+
+In Kubernetes, the kube-controller-manager is a single binary that runs multiple control loops.
+
+**Core Workload Controllers**
+
+1. ReplicaSet controller : Ensures the specified number of pod replicas are running at any given time.
+2. Deployment controller : Manages declarative updates for Pods and ReplicaSets (handling rollouts and rollbacks)
+3. StatefulSet Controller: Manages the deployment and scaling of a set of Pods, providing guarantees about the ordering and uniqueness of these Pods (essential for databases)
+4. DaemonSet Controller: Ensures that all (or some) Nodes run a copy of a specific Pod (common for log collectors like Fluentd or monitoring agents).
+5. Job Controller: Watches for Job objects that represent one-off tasks and creates Pods to run those tasks to completion.
+6. CronJob Controller: Manages Jobs created on a time-based schedule
+
+**Infrastructure & Lifecycle Controllers**
+
+1. Node Lifecycle Controller: Responsible for noticing if a node stops responding and handling the eviction of pods from unhealthy nodes
+2. Namespace Controller: Handles the cleanup of resources when a namespace is deleted.
+3. ServiceAccount & Token Controllers: Create default accounts and API access tokens for new namespaces.
+4. Endpoints Controller: Populates the Endpoints object (joining Services and Pods).
+5. EndpointSlice Controller: A more scalable version of the Endpoints controller, grouping network endpoints together.
+6. PV/PVC (Persistent Volume) Controller: Watches for new storage requests (PVCs) and binds them to available volumes (PVs).
+7. Garbage collector controller: Garbage Collector (GC) Controller is the "clean-up crew" of your cluster. Its primary job is to delete objects that no longer have a reason to exist because their "owner" is gone. When you delete a parent object (like a Deployment), the GC controller ensures that all "dependent" objects (the ReplicaSets and Pods) are also removed. This prevents "orphan" resources from clogging up your cluster's CPU and RAM.
+8. Resource Quota controller:  Resource Quota Controller is the "Enforcer" of resource limits. Its job is to ensure that a single Namespace doesn't consume more than its fair share of the cluster's total resources
+
+
 ### Additional Resources
 
 Kubernetes Documentation: [[Kubernetes Architecture](https://kubernetes.io/docs/concepts/architecture/)]
