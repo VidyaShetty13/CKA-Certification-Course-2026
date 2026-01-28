@@ -487,6 +487,15 @@ Re-check the rollout history to confirm that the Deployment is rolled back to th
 
 ---
 
+## **6. Extra Questions**
+
+### **How can you remove the controller without killing the Pods, and what happens to those Pods once the controller is gone?
+
+- use the `Orphan Deletion Policy`. By running the command kubectl delete deploy <name> --cascade=orphan, I tell the Kubernetes API server to delete the 'parent' object (the DeploymentController) but to ignore the 'ownerReference' links on the children.
+- Once the command finishes, the Pods become Orphans. They continue to run and handle traffic exactly as before. However, they are no longer managed. If one of those Pods crashes, no controller will be there to restart it, and if the load increases, they won't scale.
+- To bring them back under management, I would create a new ReplicaSet (or a Deployment) with a label selector that matches the labels on those orphan pods. Because Kubernetes is 'set-based,' the new controller will see the existing pods, 'adopt' them by adding its own UID to their ownerReference, and resume managing them without any restart or downtime.
+
+---
 ### Key Pointers:
 1. Always annotate deployments with `kubernetes.io/change-cause` to track changes for easier management and debugging.
 2. Use `kubectl rollout history` to view revision details.
@@ -528,15 +537,8 @@ Resuming the deployment continues the rollout from where it was paused, ensuring
 | **Use Case**           | Legacy workloads          | Modern workloads            | Advanced workloads with CI/CD     |
 
 ---
-## **6. Extra Questions**
 
-### **How can you remove the controller without killing the Pods, and what happens to those Pods once the controller is gone?
-
-- use the `Orphan Deletion Policy`. By running the command kubectl delete deploy <name> --cascade=orphan, I tell the Kubernetes API server to delete the 'parent' object (the DeploymentController) but to ignore the 'ownerReference' links on the children.
-- Once the command finishes, the Pods become Orphans. They continue to run and handle traffic exactly as before. However, they are no longer managed. If one of those Pods crashes, no controller will be there to restart it, and if the load increases, they won't scale.
-- To bring them back under management, I would create a new ReplicaSet (or a Deployment) with a label selector that matches the labels on those orphan pods. Because Kubernetes is 'set-based,' the new controller will see the existing pods, 'adopt' them by adding its own UID to their ownerReference, and resume managing them without any restart or downtime.
-
-## **7. References**
+## **6. References**
 - [Labels and Selectors](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/)
 - [ReplicationController](https://kubernetes.io/docs/concepts/workloads/controllers/replicationcontroller/)
 - [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)
