@@ -487,7 +487,7 @@ Re-check the rollout history to confirm that the Deployment is rolled back to th
 
 ---
 
-## **6. Extra Questions**
+## **5. Extra Questions**
 
 ### **How can you remove the controller without killing the Pods, and what happens to those Pods once the controller is gone?
 
@@ -527,7 +527,7 @@ Resuming the deployment continues the rollout from where it was paused, ensuring
 
 ---
 
-## **5. Key Differences Between rc, rs, and Deployments**
+## **6. Key Differences Between rc, rs, and Deployments**
 
 | Feature                | ReplicationController (rc) | ReplicaSet (rs)             | Deployment                        |
 |------------------------|----------------------------|-----------------------------|-----------------------------------|
@@ -538,7 +538,7 @@ Resuming the deployment continues the rollout from where it was paused, ensuring
 
 ---
 
-## **6. References**
+## **7. References**
 - [Labels and Selectors](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/)
 - [ReplicationController](https://kubernetes.io/docs/concepts/workloads/controllers/replicationcontroller/)
 - [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)
