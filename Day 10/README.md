@@ -20,12 +20,16 @@ If this **repository** helps you, give it a ⭐ to show your support and help ot
    - [What is a ReplicaSet?](#what-is-a-replicaset)   
    - [Equality-Based vs Set-Based Selectors](#equality-based-vs-set-based-selectors)  
      - [Equality-Based Selector Example](#equality-based-selector-example)  
-     - [Set-Based Selector Example](#set-based-selector-example)  
+     - [Set-Based Selector Example](#set-based-selector-example)
+       
 4. [Deployments](#4-deployments)  
    - [What is a Deployment?](#what-is-a-deployment)  
    - [How Deployments Build on rs](#how-deployments-build-on-rs)  
    - [Explaining Rolling Updates and Rollbacks in Deployments with Annotations](#explaining-rolling-updates-and-rollbacks-in-deployments-with-annotations)  
 
+5. [Extra questions](#5-Extra-questions)
+   - [How can you remove the controller without killing the Pods, and what happens to those Pods once the controller is gone?](#delete-controllers)
+     
 ## **1. Checking Kubernetes Object Details**
 
 To explore Kubernetes objects, use the `kubectl api-resources` command, which displays:
@@ -524,8 +528,15 @@ Resuming the deployment continues the rollout from where it was paused, ensuring
 | **Use Case**           | Legacy workloads          | Modern workloads            | Advanced workloads with CI/CD     |
 
 ---
+## **6. Extra Questions**
 
-## **6. References**
+### **How can you remove the controller without killing the Pods, and what happens to those Pods once the controller is gone?
+
+- use the `Orphan Deletion Policy`. By running the command kubectl delete deploy <name> --cascade=orphan, I tell the Kubernetes API server to delete the 'parent' object (the DeploymentController) but to ignore the 'ownerReference' links on the children.
+- Once the command finishes, the Pods become Orphans. They continue to run and handle traffic exactly as before. However, they are no longer managed. If one of those Pods crashes, no controller will be there to restart it, and if the load increases, they won't scale.
+- To bring them back under management, I would create a new ReplicaSet (or a Deployment) with a label selector that matches the labels on those orphan pods. Because Kubernetes is 'set-based,' the new controller will see the existing pods, 'adopt' them by adding its own UID to their ownerReference, and resume managing them without any restart or downtime.
+
+## **7. References**
 - [Labels and Selectors](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/)
 - [ReplicationController](https://kubernetes.io/docs/concepts/workloads/controllers/replicationcontroller/)
 - [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)
