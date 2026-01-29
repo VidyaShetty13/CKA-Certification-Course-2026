@@ -513,7 +513,7 @@ kubectl describe limitrange resource-limits
 
 ## Practice  
 
-### **If you do not specify a memory limit**  
+### If you do not specify a memory limit  
 
 ### **If you do not specify a cpu limit**  
 
