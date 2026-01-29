@@ -1180,12 +1180,121 @@ Note this is supportive only in 1.35 , if its below that version then u get belo
 
 
 Reference: https://kubernetes.io/docs/tasks/configure-pod-container/resize-pod-resources/#example-resizing-pod-level-resources
-```
+---
 
 ### Pod-Level Resources vs QoS
+In Kubernetes, the QoS class is determined by the effective requests and limits of the Pod. With the introduction of Pod-level resources in v1.35, the rules have evolved to include that top-level "budget."
+
+1. If pod level resource requests and limits doesnt match what would be the QoS class?
 
 ```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memory-demo
+spec:
+  resources:
+    limits:
+      memory: 300Mi
+      cpu: 200m
+    requests:
+      memory: 200Mi
+      cpu: 100m
+  containers:
+    - name: memory-demo-ctr
+      image: polinux/stress
+      command: ["stress"]
+      args: ["--vm", "1", "--vm-bytes", "150M", "--vm-hang", "1"]
+
 ```
+Result: qosClass: Burstable
+---
+
+2. If pod level resource requests and limits does match what would be the QoS class?
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memory-demo
+spec:
+  resources:
+    limits:
+      memory: 300Mi
+      cpu: 200m
+    requests:
+      memory: 300Mi
+      cpu: 200m
+  containers:
+    - name: memory-demo-ctr
+      image: polinux/stress
+      command: ["stress"]
+      args: ["--vm", "1", "--vm-bytes", "150M", "--vm-hang", "1"]
+```
+Result: qosClass: Guaranteed
+---
+
+3. If pod level resource requests and limits `doesnt match` but container resource request and limits `match` what would be the QoS class?
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memory-demo
+spec:
+  resources:
+    limits:
+      memory: 300Mi
+      cpu: 500m
+    requests:
+      memory: 200Mi
+      cpu: 250m
+  containers:
+    - name: memory-demo-ctr
+      image: polinux/stress
+      resources:
+        requests:
+          memory: 100Mi
+          cpu: 100m
+        limits:
+          memory: 100Mi
+          cpu: 100m
+      command: ["stress"]
+      args: ["--vm", "1", "--vm-bytes", "50M", "--vm-hang", "1"]
+```
+Result: qosClass: Burstable
+---
+
+4. If pod level resource requests and limits `does match` but container resource request and limits `doesnt match` what would be the QoS class?
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memory-demo
+spec:
+  resources:
+    limits:
+      memory: 300Mi
+      cpu: 200m
+    requests:
+      memory: 300Mi
+      cpu: 200m
+  containers:
+    - name: memory-demo-ctr
+      image: polinux/stress
+      resources:
+        requests:
+          memory: 100Mi
+          cpu: 100m
+        limits:
+          memory: 200Mi
+          cpu: 150m
+      command: ["stress"]
+      args: ["--vm", "1", "--vm-bytes", "150M", "--vm-hang", "1"]
+```
+
+Result: qosClass: Guaranteed
 ---
 ## References
 
