@@ -28,6 +28,22 @@ If this **repository** helps you, give it a ⭐ to show your support and help ot
 - [How Kubernetes Collects Metrics](#how-kubernetes-collects-metrics)
 - [Why Does kubectl top nodes Fail Without the Metrics Server?](#why-does-kubectl-top-nodes-fail-without-the-metrics-server)
 - [Installing the Metrics Server](#installing-the-metrics-server)
+- [Practice](#Practice)
+  - [If you do not specify a memory limit](#memory-limit-not-specified)
+  - [If you do not specify a cpu limit](#cpu-limit-not-specified)
+  - [If you do not specify a memory or cpu requests](#limit-specified)
+  - [Exceed a Container's cpu limit](#cpu-greater)
+  - [Exceed a Container's memory limit](#memory-greater)
+  - [Specify a memory request that is too big for your Nodes](#memory-greater-than-node)
+  - [Specify a CPU request that is too big for your Nodes](#cpu-greater-than-node)
+  - [Create a pod with cpu and memory requests and limits at pod-level](#pod-resource-specified)
+  - [Create a pod with resource requests and limits at both pod-level and container-level](#pod-container-resource-specified)
+  - [podlevel resource limit is set with low value than individual container](#pod-resource-low)
+  - [pod level resource is specified more than individual container](#pod-resource-more)
+  - [Resizing CPU without restart for a container](#container-cpu-no-restart)
+  - [Resizing memory with restart](#container-memory-with-restart)
+  - [Infeasible resize request for cpu](#container-cpu-infeasible)
+  - [Pod level resize doesnt container restart policy but container level has restartPolicy so what happens when the Pod level resize is performed?](#pod-restart-policy)
 
 
 ---
@@ -495,7 +511,43 @@ kubectl describe limitrange resource-limits
 
 ---
 
+## Practice  
 
+### **If you do not specify a memory limit**  
+
+### **If you do not specify a cpu limit**  
+
+### **If you do not specify a memory or cpu requests**  
+
+### **Exceed a Container's cpu limit**  
+
+### **Exceed a Container's cpu limit**  
+
+### **Exceed a Container's memory limit**  
+
+### **Exceed a Container's cpu limit**  
+
+### **Specify a memory request that is too big for your Nodes**
+
+### **Specify a CPU request that is too big for your Nodes**
+
+### **Create a pod with cpu and memory requests and limits at pod-level**
+
+### **Create a pod with resource requests and limits at both pod-level and container-level**
+
+### **Create a pod with resource requests and limits at both pod-level and container-level**
+
+### **pod level resource is specified more than individual container**
+
+### **Resizing CPU without restart for a container**
+
+### **Resizing memory with restart**
+
+### **Infeasible resize request for cpu**
+
+### **Pod level resize doesnt container restart policy but container level has restartPolicy so what happens when the Pod level resize is performed?**
+
+---
 ## References
 
 - [Kubernetes Official Documentation: Managing Compute Resources for Containers](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/)
