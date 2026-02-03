@@ -772,6 +772,11 @@ kubectl get events
 
 ---
 
+### **Behaviour**
+
+- If any pod doesnt know what should be set as resource.requests and limits then it can be checked by deploying VPA with OFF mode so that we get the recommended values
+- InPlaceOrRecreate : this is the latest updatemode.updatepolicy. VPA attempts to update Pod resource requests and limits without restarting the Pod when possible. However, if in-place updates cannot be performed for a particular resource change, VPA falls back to evicting the Pod (similar to Recreate mode) and allowing the workload controller to create a replacement Pod with updated resources
+
 ## References:
   - [HPA Documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
   - [VPA Documentation](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
