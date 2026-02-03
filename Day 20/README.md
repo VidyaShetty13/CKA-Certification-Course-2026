@@ -34,6 +34,7 @@ If this **repository** helps you, give it a ⭐ to show your support and help ot
   - [HPA vs VPA: Recommendations and Complementary Use](#hpa-vs-vpa-recommendations-and-complementary-use)
   - [Important Distinction between HPA & VPA](#hpa-vs-vpa-important-distinctions)
   - [Demo: Vertical Pod Autoscaler (VPA)](#demo-vertical-pod-autoscaler-vpa)
+- [Scenarios](#Scenarios)
 - [References](#references)
 
 
@@ -782,7 +783,7 @@ kubectl get events
   - Even if the VPA provides a recommendation (e.g., 126m), the Kubernetes Admission Controller will forcibly "clamp" that value to the nearest boundary defined in your LimitRange (e.g., the min: 300m). Your Pod will never scale below the min or above the max specified in the LimitRange, regardless of what the VPA suggests.
 
 
-### **Scenarios**
+## **Scenarios**
 
 1. HPA vs. VPA: The Recursive Loop
    - The Problem: If both scale on CPU, HPA adds pods to lower average CPU, while VPA increases CPU requests to handle the load. They will "race" until you hit cluster limits.
@@ -810,7 +811,223 @@ kubectl get events
      $ k logs vpa-updater-6cf6bc7ff8-lqzw6 -n kube-system  |grep vpa-deploy
      I0203 10:28:39.708852       1 pods_restriction_factory.go:212] "Too few replicas" kind="ReplicaSet" object="default/vpa-deploy-7ccccd94f7" livePods=1 requiredPods=2 globalMinReplicas=2
      ```
-   
+8. Is HPA  applicable only to cpu and memory utilization?
+   - yes, unless u want to scrape metrics like storage, network latency, or external then u want to use custom metrics or External metrics aPI
+   - Resource metrics :- metrics.k8s.io          :- CPU/Memory: Basic scaling when a pod is "busy."
+   - Custom Metrics   :- custom.metrics.k8s.io   :- App-Specific: HTTP requests per second (RPS), active database connections, or processing latency.
+   - External Metrics :- external.metrics.k8s.io :- Infrastructure-Specific: AWS SQS queue length, Pub/Sub message backlog, or traffic from a Global Load Balancer.
+
+9. can we perform autoscale/HPA with min replica set to 0??
+    - even if we try to create using below command, it will automatically change into minReplica:1
+      ```yaml
+      $ k autoscale deploy/vpa-deploy --min=0 --max=10 --cpu=10%
+      horizontalpodautoscaler.autoscaling/vpa-deploy autoscaled
+      ```
+     If you attempt to create an HPA with minReplicas: 0 for resource metrics (CPU/Memory), the Kubernetes API server will automatically default or validate that value back to 1. This is because resource-based autoscaling requires at least one active pod to report metrics. Without a pod, there is no CPU usage to measure, and the HPA would be permanently stuck at zero
+
+10. If you scale a deployment using `kubectl scale` command to a higher number of replicas, but the cluster has insufficient resources to accommodate all new replicas, what will happen?
+    - 1. The Pods enter Pending State
+         - When you run kubectl scale, the Deployment controller immediately creates the requested number of Pod objects. However, the Kube-scheduler cannot find a node with enough free CPU or Memory to host them.
+         - These Pods will sit in a Pending state indefinitely.
+         - If you run kubectl get pods, you will see the new replicas listed as Pending.
+    - 2. Event Logging (The "Why")
+         - If you inspect one of the pending pods using kubectl describe pod <pod-name>, you will see a specific event at the bottom:
+         - Warning FailedScheduling default-scheduler 0/3 nodes are available: 3 Insufficient cpu.
+    - 3. The Cluster Autoscaler (CA) Kicks In
+         If your cluster has Cluster Autoscaler enabled (common in GKE, EKS, AKS):
+         - The CA watches for Pods that are Pending specifically due to "Insufficient Resources."
+         - It identifies that the current node pool is full and communicates with the Cloud Provider (AWS/GCP/Azure).
+         - It requests a new Node to be added to the cluster.
+    - 4. The Wait and Transition
+         - The Delay: There is a "provisioning delay" (usually 1–3 minutes) while the cloud provider spins up the VM and the Kubelet starts.
+         - The Success: Once the new Node joins the cluster and becomes Ready, the Scheduler automatically detects the new capacity and moves the Pods from Pending to ContainerCreating, and finally to Running.
+    - The Deadlock: If Cluster Autoscaler is not enabled and your nodes are full, those pods will stay Pending forever until you either manually add a node or scale the deployment back down.
+    - Priority and Preemption: If you have PriorityClasses configured, a high-priority "Pending" pod might actually kick out (evict) an existing low-priority pod to take its spot. This is called Preemption
+
+11. What happens if the Cluster Autoscaler is at its max-nodes limit?
+    - The pods remain Pending. The Cluster Autoscaler will log an error stating it has reached the maximum scale-out limit, and the system will wait until either a node is manually added, an existing pod is deleted, or the max-nodes limit is increased
+
+12. I have a Pod with an Nginx app and a Log-exporter sidecar. Nginx is hitting 100% CPU, but the HPA is not scaling up. Why?
+    - The Logic: If the Nginx container is using 100% of its request but the sidecar is using 0%, the HPA sees the "average" of the whole Pod (e.g., 50%). If your HPA threshold is set to 70%, it won't trigger.
+    - The Fix: "I would switch the HPA configuration from type: Resource to type: ContainerResource to target only the Nginx container."
+      ```yaml
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: vpa-deploy
+      spec:
+        replicas: 2
+        selector:
+          matchLabels:
+            app: web
+        template:
+          metadata:
+            labels:
+              app: web
+          spec:
+            containers:
+            - name: nginx-container
+              image: nginx
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "64Mi"
+            - name: sidecar-container
+              image: busybox
+              command: ["/bin/sh", "-c", "while true; do sleep 30; done"]
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "32Mi"
+      ---
+      $ k expose deployment/vpa-deploy --port 8080
+      service/vpa-deploy exposed
+      ---
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: nginx-only-hpa
+      spec:
+        scaleTargetRef:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: vpa-deploy
+        minReplicas: 1
+        maxReplicas: 5
+        metrics:
+        - type: ContainerResource
+          containerResource:
+            container: nginx-container
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 50
+      ---
+      ```
+
+13. If I use ContainerResource scaling for Container A, do I still need to define resource requests for Container B (the sidecar)?
+    - In autoscaling/v2, if you target Container A specifically using ContainerResource, the HPA will work even if Container B has no requests.
+    - Why? Because the HPA calculation is now "scoped" specifically to the target container. It looks at (Usage of Container A) / (Request of Container A).
+    - The Math: It no longer cares about the "Pod Total," so the missing request in Container B doesn't break the division math for Container A.
+
+14. If I use scaling for Pod instead on Containers in mulit-container-pod sceanrio. Container A is specified with resource requests, but container B is not specified with any resource requests. what happens in this case?
+    - If you scale at the Pod level (using type: Resource) and even one container is missing a request, the HPA essentially "goes unknown."
+    - 1. The Result: Unknown Status
+         The HPA will fail to calculate the CPU/Memory percentage for the entire Pod.
+         - If you run kubectl get hpa, the TARGETS column will show <unknown>/50%.
+    - 2. The Logic: Why does it fail?
+         - When the HPA is set to Pod-level scaling, the formula it uses is:
+         - Utilization = Actual Usage of all Containers / Requests of all Containers
+         - The Problem: If Container B has no request, the "Denominator" sum (Requests) is mathematically incomplete or considered "undefined" for a percentage calculation.
+         - The Policy: Kubernetes refuses to make a scaling decision based on incomplete data. It won't guess "0" for the missing request; it simply stops the autoscaling process to prevent scaling your app up or down incorrectly.
+         
+15. What happens to the HPA calculation if one of the containers in a multi-container Pod crashes?
+    - The Logic: If a container is missing (Crashing/Restarting), the Metrics Server might report an Unknown or 0 value for that container.
+    - The Impact: This can "skew" the average utilization, causing the HPA to either stop scaling or make incorrect decisions. This is why Readiness Probes are critical; HPA usually ignores pods that are not in a Ready state to avoid scaling based on "broken" data.
+    ```yaml
+    $ cat multi-container.yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: vpa-deploy
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: web
+      template:
+        metadata:
+          labels:
+            app: web
+        spec:
+          containers:
+          - name: nginx-container
+            image: nginx
+            resources:
+              requests:
+                cpu: "100m"
+                memory: "64Mi"
+          - name: sidecar-container
+            image: busybox
+            command: ["/bin/sh", "-c","exit 1"]
+    ---
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: nginx-only-hpa
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: vpa-deploy
+      minReplicas: 1
+      maxReplicas: 5
+      metrics:
+      - type: ContainerResource
+        containerResource:
+          container: nginx-container
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 50
+    ```
+    
+    ```yaml
+    $ k get hpa nginx-only-hpa
+    NAME             REFERENCE               TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+    nginx-only-hpa   Deployment/vpa-deploy   cpu: <unknown>/50%   1         5         2          50s
+    ---
+    $ k get hpa nginx-only-hpa -oyaml
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      creationTimestamp: "2026-02-03T11:47:43Z"
+      name: nginx-only-hpa
+      namespace: default
+      resourceVersion: "159873"
+      uid: 10b08ffe-e6bb-493d-b9e8-7132909dc60a
+    spec:
+      maxReplicas: 5
+      metrics:
+      - containerResource:
+          container: nginx-container
+          name: cpu
+          target:
+            averageUtilization: 50
+            type: Utilization
+        type: ContainerResource
+      minReplicas: 1
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: vpa-deploy
+    status:
+      conditions:
+      - lastTransitionTime: "2026-02-03T11:47:58Z"
+        message: the HPA controller was able to get the target's current scale
+        reason: SucceededGetScale
+        status: "True"
+        type: AbleToScale
+      - lastTransitionTime: "2026-02-03T11:47:58Z"
+        message: 'the HPA was unable to compute the replica count: failed to get cpu utilization:
+          did not receive metrics for targeted pods (pods might be unready)'
+        reason: FailedGetContainerResourceMetric
+        status: "False"
+        type: ScalingActive
+      currentMetrics:
+      - type: ""
+      currentReplicas: 2
+      desiredReplicas: 0
+    ```
+16. HPA is at maxReplicas, CPU is 100%. What's your next move?
+    - Vertical Check: Are the individual pods too small? Maybe the CPU request is too low, causing pods to hit 100% too easily.
+    - Code Check: Is there a CPU leak or an infinite loop in the app? If so, scaling to 100 pods won't help; it will just cost more money.
+    - Next Step: Increase maxReplicas as a hotfix, then investigate the "Resource Efficiency."
+      
+17. VPA and HPA are both scaling on Memory. What happens?
+    - The Loop: HPA adds pods-> Average memory per pod drops ->  VPA thinks pods are oversized and shrinks them ->  Memory % spikes back up -> HPA adds more pods.
+    - The Result: This "flapping" makes the cluster unstable and wastes time on constant pod restarts.
+
 ## References:
   - [HPA Documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
   - [VPA Documentation](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
