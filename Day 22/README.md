@@ -615,7 +615,20 @@ Below is a table summarizing the common Pod statuses, their descriptions, causes
 4. **Recreate Scenarios in a Test Pod:**
    - Sometimes isolating a problematic configuration in a minimal pod helps diagnose the issue. Use a simple test container to simulate environment variables or image pull policies.
 
+5. ErrImagePull (The Event) vs ImagePullBackOff (The Delay)
+   
+   ErrImagePull
+   - This is a temporary error status. It means Kubernetes tried to pull the image and failed right now.
+   - What's happening: The Kubelet attempted to reach the registry (like Docker Hub), but something went wrong (e.g., a 404 error, a timeout, or wrong credentials).
+   - Duration: It only stays in this state for a few seconds during the actual attempt.
+  
+   ImagePullBackOff
+   - This is a waiting status. Since the pull failed (ErrImagePull), Kubernetes doesn't want to spam the registry with infinite requests, as this could get your IP blocked or waste CPU.
+   - What's happening: Kubernetes enters a "cooldown" mode. It says, "I tried and failed, so I'm going to wait 10 seconds before trying again."
+   - The "Back-Off" logic: If it fails again, the wait time increases (20s, 40s, 80s...), eventually capping at 5 minutes.
 ---
+
+
 
 ### References:
 - [Kubernetes Official Documentation: Pod Lifecycle](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)
