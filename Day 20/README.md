@@ -1028,6 +1028,16 @@ kubectl get events
     - The Loop: HPA adds pods-> Average memory per pod drops ->  VPA thinks pods are oversized and shrinks them ->  Memory % spikes back up -> HPA adds more pods.
     - The Result: This "flapping" makes the cluster unstable and wastes time on constant pod restarts.
 
+18. incase if we have both cpu and memory set for hpa with different thresholds or same thresholds, in that case what happens if cpu is increased and memory is underutilized, will it still scale the pods?
+    - When you define both CPU and Memory in a single HPA, the HPA controller calculates the "desired replica count" for each metric independently. It then compares the results and picks the largest number.
+    - The Math Example: Imagine your current state is 2 Replicas.
+      - Metric A (CPU): Usage is high. HPA calculates that you need 5 Replicas to bring CPU down to the threshold.
+      - Metric B (Memory): Usage is very low. HPA calculates that you only need 1 Replica (it wants to scale down).
+    - The Result: The HPA will scale the deployment to 5 Replicas.
+    - Why does it work this way?
+         - Kubernetes prioritizes Availability over Cost Savings. If it chose the lower number (Memory), your application would crash because of the high CPU. By choosing the higher number, it ensures the "bottlenecked" resource gets the help it needs, even if the other resource (Memory) ends up being "wasted" or underutilized.
+      - When multiple metrics are provided to an HPA, the controller acts as an aggregator. It performs an independent calculation for every metric provided. After calculating the desired replicas for CPU, Memory, and any Custom Metrics, it selects the maximum value among them. This ensures the cluster addresses the most constrained resource first to maintain application stability.
+        
 ## References:
   - [HPA Documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
   - [VPA Documentation](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
