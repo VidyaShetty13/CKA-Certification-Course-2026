@@ -776,7 +776,41 @@ kubectl get events
 
 - If any pod doesnt know what should be set as resource.requests and limits then it can be checked by deploying VPA with OFF mode so that we get the recommended values
 - InPlaceOrRecreate : this is the latest updatemode.updatepolicy. VPA attempts to update Pod resource requests and limits without restarting the Pod when possible. However, if in-place updates cannot be performed for a particular resource change, VPA falls back to evicting the Pod (similar to Recreate mode) and allowing the workload controller to create a replacement Pod with updated resources
+- If there is a default limitrange specified, and then resource.request and limits not specified in deployment, how VPA  perform?
+  - LimitRanges always act as a "hard floor and ceiling." The VPA can recommend whatever it wants based on usage, but the Admission Controller will forcibly "clamp" those values to stay within the Min/Max boundaries of your LimitRange.
+  - When VPA and LimitRange coexist in a namespace, the LimitRange always wins.
+  - Even if the VPA provides a recommendation (e.g., 126m), the Kubernetes Admission Controller will forcibly "clamp" that value to the nearest boundary defined in your LimitRange (e.g., the min: 300m). Your Pod will never scale below the min or above the max specified in the LimitRange, regardless of what the VPA suggests.
 
+
+### **Scenarios**
+
+1. HPA vs. VPA: The Recursive Loop
+   - The Problem: If both scale on CPU, HPA adds pods to lower average CPU, while VPA increases CPU requests to handle the load. They will "race" until you hit cluster limits.
+   - The Solution: Use them together only if they monitor different metrics (e.g., HPA on "Requests Per Second" and VPA on "Memory").
+2. PDB (Pod Disruption Budget) vs. VPA
+   - The Problem: VPA (in Recreate mode) needs to kill a pod to resize it. If you have a PDB that says minAvailable: 1 and you only have one pod running, the VPA will never be able to resize your pod. It will be stuck in a "pending eviction" state.
+   - The Note: Always ensure replicas > minAvailable in your PDB if you want VPA to function automatically.
+3. Cluster Autoscaler (CA) vs. Taints
+   - The Problem: You might have HPA scaling up pods, but they stay Pending because the only available nodes have Taints that the pods don't have Tolerations for.
+   - The Cluster Autoscaler only adds nodes to 'Node Groups' that satisfy the pod's requirements. If your Pod doesn't tolerate the taints of the new nodes being spun up, the CA might appear 'broken' even though it's just following your scheduling rules
+4. PDB vs. HPA (Horizontal Pod Autoscaler)
+   The Scenario: HPA decides to scale your deployment down from 5 pods to 2 pods because traffic has decreased
+   The Conflict: If your PDB is configured with minAvailable: 4, the HPA will send the instruction to scale down, but the Eviction API will block the deletion of those pods because it would violate the PDB.
+   The Result: Your pods stay running even though they aren't needed. You are essentially over-paying for resources.
+   Always ensure your minAvailable or maxUnavailable in the PDB is lower than your HPA's minReplicas. If HPA minReplicas is 2, but PDB minAvailable is 3, your cluster will never be able to scale down to its minimum capacity.
+6. PDB vs. VPA (Vertical Pod Autoscaler)
+   - The Scenario: You have a critical app with replicas: 1 and a PDB with minAvailable: 1. VPA (in updateMode: Recreate) notices the pod needs more memory.
+   - The Conflict: To update the pod, VPA must delete it (evict it) and let the Deployment controller recreate it with the new limits.
+   - The Deadlock: The Eviction API checks the PDB. The PDB says, "You must have at least 1 pod available." Since you only have 1 pod, the eviction is denied.
+   - The Result: The VPA is stuck. It will continuously try to evict the pod and fail. Your pod will stay under-resourced and potentially crash with an OOMKilled (Out of Memory) error.
+   - Latest Solution: VPA with pod resize feature `InPlaceOrRecreate`
+7. If there is only 1 Pod and if you try to perform VPA with `Recreate` mode, what happens?
+   - By default, the VPA Updater will refuse to evict a pod if it is the only one running (replicas: 1). This is a safety feature to prevent 100% downtime for your application while the VPA attempts to resize it. Even if a recommendation exists, VPA will ignore it until you have at least 2 replicas.
+     ```yaml
+     $ k logs vpa-updater-6cf6bc7ff8-lqzw6 -n kube-system  |grep vpa-deploy
+     I0203 10:28:39.708852       1 pods_restriction_factory.go:212] "Too few replicas" kind="ReplicaSet" object="default/vpa-deploy-7ccccd94f7" livePods=1 requiredPods=2 globalMinReplicas=2
+     ```
+   
 ## References:
   - [HPA Documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
   - [VPA Documentation](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
