@@ -452,7 +452,26 @@ kubectl get pods -w
 **Behavior:**
 - As load increases, **CPU utilization rises**.
 - HPA will scale from 1 pod up to max 5 if needed.
-- Once load decreases (stop load-generator), HPA scales back down.
+- Once load decreases (stop load-generator), HPA scales back down after 5mins. because By default, the HPA has a 5-minute (300 seconds) stabilization window for scale-down. The Logic: Even if the CPU drops to 0%, the HPA controller looks back at the last 5 minutes of metrics. It picks the highest recommendation from that window to ensure that the drop in traffic isn't just a 30-second "blip."
+- If resource.request is not specified and resource.limit is specified in a deployment what happens to HPA?
+  - It will be considered a `guaranteed qosClass`, requests will be autonatically set to limit
+  - HPA will scale out the pods
+- If the resource.request is mentioned and the resource.limit is not specified in a deployment what happens to HPA?
+  - It will be considered as `Burstable qosClass`, limits will not be automatically set
+  - HPA scale out the pods. It doesn't "care" that there is no limit; it simply sees that you requested 200m CPU and you are currently using 100m, so you are at 50% utilization.
+- If the resources section is not specified in the deployment, what happens to HPA?
+  - It will be considered as `BestEffort qosClass`
+  - HPA will not function properly without resources specified it will be something like below
+    ```yaml
+    NAME    REFERENCE          TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+    nginx   Deployment/nginx   cpu: <unknown>/20%   1         4         1          2m4s
+    ```
+    ```yaml
+    message: 'the HPA was unable to compute the replica count: failed to get cpu utilization:
+        missing request for cpu in container nginx of Pod nginx-66686b6766-qbzvw'
+    reason: FailedGetResourceMetric
+    ```
+    
 
 ---
 
