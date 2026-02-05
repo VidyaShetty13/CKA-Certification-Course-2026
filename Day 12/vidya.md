@@ -87,17 +87,40 @@ Address: 10.96.44.154
 
 <details>
   <summary>4. How to set the nodePort Service without creating clusterIP</summary>
-  - 
+  - Its not possible. NodePort requires ClusterIP
+    ```yaml
+  
+    $ k create -f svc.yaml
+    The Service "nginx" is invalid: spec.clusterIPs[0]: Invalid value: "None": may not be set to 'None' for NodePort services
+  
+    $ cat svc.yaml
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app: nginx
+      name: nginx
+      namespace: default
+    spec:
+      clusterIP: None
+      ports:
+      - port: 80
+        protocol: TCP
+        targetPort: 80
+      selector:
+        app: nginx
+      type: NodePort
+
+    ```
 </details>
 
 <details>
   <summary>5. How to set the loadbakancer service without creating clusterIP or nodePort</summary>
 
   - to create loadbalancer without nodePort
-    ```yaml
-    You can optionally disable node port allocation for a Service of type: LoadBalancer, by setting the field spec.allocateLoadBalancerNodePorts to false
-    ```
-  - 
+    - You can optionally disable node port allocation for a Service of type: LoadBalancer, by setting the field spec.allocateLoadBalancerNodePorts to false
+  - to create loadbalancer without ClusterIO
+    - Most Cloud Providers (AWS, GCP, Azure) will fail to provision a Load Balancer if the clusterIP is set to None. The cloud controller manager usually expects a functional ClusterIP to build the forwarding rules.
 </details>
 
 <details>
