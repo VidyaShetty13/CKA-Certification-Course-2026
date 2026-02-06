@@ -300,3 +300,12 @@ Address: 10.96.44.154
   - IPVS mode: Uses a hash table and is much faster for large-scale clusters. It also supports better load-balancing algorithms like "Least Connections" (iptables only does "Random").
 
 </details>
+
+<details>
+  <summary>11. can we have multiple nodeport svc with same nodePort num, what happens</summary>
+
+  - No, you will get below error
+    ```yaml
+    # * spec.ports[0].nodePort: Invalid value: 32765: provided port is already allocated
+    ```
+</details>
