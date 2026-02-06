@@ -1,4 +1,4 @@
-# Resource requests , limits, limitrange
+# Resource requests , limits, limitrange, QoS
 
 ## Table of contents
 
