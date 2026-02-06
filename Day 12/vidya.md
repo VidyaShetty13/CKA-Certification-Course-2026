@@ -5,7 +5,43 @@
 <details>
   <summary>1. Can the service be created without selectors</summary>
 
-yes. Without selectors it will be `ExternalName` service type
+When you create a Service with a selector, Kubernetes automatically creates and manages an Endpoints (or EndpointSlice) object for you. When you omit the selector, Kubernetes creates the Service but leaves it "empty"—it has no idea where to send traffic until you manually provide the destination
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+
+---
+$ k describe svc nginx
+Name:                     nginx
+Namespace:                default
+Labels:                   app=nginx
+Annotations:              <none>
+Selector:                 <none>
+Type:                     ClusterIP
+IP Family Policy:         RequireDualStack
+IP Families:              IPv4,IPv6
+IP:                       None
+IPs:                      None
+Port:                     <unset>  80/TCP
+TargetPort:               80/TCP
+Endpoints:                <none>
+Session Affinity:         None
+Internal Traffic Policy:  Cluster
+Events:                   <none>
+
+```
 </details>
 
 <details>
@@ -87,9 +123,10 @@ Address: 10.96.44.154
 
 <details>
   <summary>4. How to set the nodePort Service without creating clusterIP</summary>
-  - Its not possible. NodePort requires ClusterIP
-    ```yaml
   
+  - Its not possible. NodePort requires ClusterIP
+  
+    ```yaml
     $ k create -f svc.yaml
     The Service "nginx" is invalid: spec.clusterIPs[0]: Invalid value: "None": may not be set to 'None' for NodePort services
   
@@ -110,21 +147,21 @@ Address: 10.96.44.154
       selector:
         app: nginx
       type: NodePort
-
     ```
 </details>
 
 <details>
-  <summary>5. How to set the loadbakancer service without creating clusterIP or nodePort</summary>
+  <summary>5. How to set the loadbalancer service without creating clusterIP or nodePort</summary>
 
   - to create loadbalancer without nodePort
     - You can optionally disable node port allocation for a Service of type: LoadBalancer, by setting the field spec.allocateLoadBalancerNodePorts to false
-  - to create loadbalancer without ClusterIO
+  - to create loadbalancer without ClusterIP
     - Most Cloud Providers (AWS, GCP, Azure) will fail to provision a Load Balancer if the clusterIP is set to None. The cloud controller manager usually expects a functional ClusterIP to build the forwarding rules.
 </details>
 
 <details>
   <summary>6. How to map a Service directly to a specific Pod IP address</summary>
+  
   - Use headless service by explicitly specifying "None" for the cluster IP address (.spec.clusterIP)
   - For headless Services, a cluster IP is not allocated, kube-proxy does not handle these Services, and there is no load balancing or proxying done by the platform for them.
   - To define a headless Service, you make a Service with .spec.type set to ClusterIP (which is also the default for type), and you additionally set .spec.clusterIP to None.
