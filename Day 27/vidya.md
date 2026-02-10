@@ -248,7 +248,7 @@
 </details>
 
 <details>
-  <summary>We are deploying a application in a multi-node cloud environment. Why would we choose WaitForFirstConsumer over Immediate as the volume binding mode in our StorageClass?</summary>
+  <summary>We are deploying a application in a multi-node cloud environment. Why would we choose WaitForFirstConsumer over Immediate as the volume binding mode in our StorageClass? - HARD rule</summary>
 
   1. Create a PV tied to a specific Node
      - We will use nodeAffinity on the PV. This tells K8s: "This volume only exists on kind-control-plane."
@@ -380,8 +380,894 @@
        ```
 </details>
 
+<details>
+  <summary>SOFT rule: Create a PV with no nodeAffinity rules set to restrict to particular node. Then create 2 pods on different nodes and see what is the status of those 2 pods</summary>
+
+  - Create a PV and PVC
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: web-assets-pv
+    spec:
+      capacity:
+        storage: 256Mi
+      volumeMode: Filesystem
+      accessModes:
+        - ReadWriteOnce
+      persistentVolumeReclaimPolicy: Retain
+      storageClassName: manual
+      hostPath:
+        path: /tmp/web-data
+    ---
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"
+    
+    ```
+    
+  - Create 2 pods on 2 different nodes
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        run: try
+      name: try
+    spec:
+      containers:
+      - image: nginx
+        name: try
+        volumeMounts:
+          - name: pvc-volume
+            mountPath: /usr/share/nginx/html
+      volumes:
+        - name: pvc-volume
+          persistentVolumeClaim:
+            claimName: web-assets-pvc
+    
+    ---
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        run: try-2
+      name: try-2
+    spec:
+      nodeName: kind-worker2
+      containers:
+      - image: nginx
+        name: try-2
+        volumeMounts:
+          - name: pvc-volume
+            mountPath: /usr/share/nginx/html
+      volumes:
+        - name: pvc-volume
+          persistentVolumeClaim:
+            claimName: web-assets-pvc
+    
+    ```
+    
+  - Check 2 pods are running
+    ```yaml
+    $ k get pods -owide
+    NAME    READY   STATUS    RESTARTS   AGE   IP            NODE           NOMINATED NODE   READINESS GATES
+    try     1/1     Running   0          21s   10.244.1.32   kind-worker    <none>           <none>
+    try-2   1/1     Running   0          21s   10.244.2.11   kind-worker2   <none>           <none>
+    ```
+    
+  - Create a file on each container , and verify if its present on both the nodes
+    ```yaml
+    $ k exec -it try -- bash
+    root@try:/# touch /usr/share/nginx/html/pod1
+    root@try:/# exit
+    
+    exit$ k exec -it try-2 -- bash
+    root@try-2:/# touch /usr/share/nginx/html/pod2
+    root@try-2:/# exit
+    exit
+    
+    $ docker ps
+    CONTAINER ID   IMAGE                  COMMAND                  CREATED       STATUS       PORTS                       NAMES
+    b2ac95979ad6   kindest/node:v1.34.3   "/usr/local/bin/entr…"   2 weeks ago   Up 3 hours                               kind-worker2
+    0b162e3e3f31   kindest/node:v1.34.3   "/usr/local/bin/entr…"   2 weeks ago   Up 3 hours                               kind-worker
+    
+    $ docker exec -it b2ac95979ad6 bash
+    root@kind-worker2:/# ls -ltr /tmp/web-data/
+    total 0
+    -rw-r--r-- 1 root root 0 Feb 10 12:26 pod2
+    root@kind-worker2:/# exit
+    exit
+    
+    $ docker exec -it 0b162e3e3f31 bash
+    root@kind-worker:/# ls -ltr /tmp/web-data/
+    total 0
+    -rw-r--r-- 1 root root 0 Feb 10 12:26 pod1
+    root@kind-worker:/# exit
+    exit
+
+    ```
+  - Results:
+    - How K8s sees it: "Here is a volume that exists at /tmp/web-data. I have no rules telling me it only exists on one node."
+    - Why it didn't block it: The standard hostPath plugin is "dumb" because it doesn't verify if that path is the same physical drive across nodes. It simply tells the Kubelet on whatever node the Pod lands on: "Hey, mount /tmp/web-data from your local disk."
+    - The "Ghost" Result: K8s allowed it, but as you saw, Node A had its own /tmp/web-data and Node B had its own. They were not sharing data. They were just two pods happening to use the same name for different local folders.
+    - 
+</details>
+
+<details>
+  <summary> When would RWX + nodeAffinity actually be useful?</summary>
+  - You would use this if you have multiple Pods on the same specific node that all need to write to the same folder.
+  - Example: You have a massive 128-core "Super Node" with a specialized NVMe drive. You want 10 replicas of your app to all run on that node and all write to that drive.
+  - The nodeAffinity ensures they all land on the Super Node.
+  - The RWX ensures they can all open the same directory for writing.
+</details>
+
+<details>
+  <summary> Bind a new PVC onto to the Released PV and see if it works or not</summary>
+
+  - Create a PV, PVC and pod
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: web-assets-pv
+    spec:
+      capacity:
+        storage: 256Mi
+      volumeMode: Filesystem
+      accessModes:
+        - ReadWriteOnce
+      persistentVolumeReclaimPolicy: Retain
+      storageClassName: manual
+      hostPath:
+        path: /tmp/web-data
+    ---
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"
+    ---
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        run: web-server
+      name: web-server
+    spec:
+      containers:
+      - image: nginx
+        name: web-server
+        volumeMounts:
+          - name: local-pvc
+            mountPath: /usr/share/nginx/html
+      volumes:
+        - name: local-pvc
+          persistentVolumeClaim:
+            claimName: web-assets-pvc
+    ```
+    
+  - status pod pvc,pv,pod
+    ```yaml
+    NAME         READY   STATUS    RESTARTS   AGE   IP            NODE          NOMINATED NODE   READINESS GATES
+    web-server   1/1     Running   0          4s    10.244.1.21   kind-worker   <none>           <none>
+
+    Name:            web-assets-pv
+    Labels:          <none>
+    Annotations:     pv.kubernetes.io/bound-by-controller: yes
+    Finalizers:      [kubernetes.io/pv-protection]
+    StorageClass:    manual
+    Status:          Bound
+    Claim:           default/web-assets-pvc
+    Reclaim Policy:  Retain
+    Access Modes:    RWO
+    VolumeMode:      Filesystem
+    Capacity:        256Mi
+    Node Affinity:   <none>
+    Message:
+    Source:
+        Type:          HostPath (bare host directory volume)
+        Path:          /tmp/web-data
+        HostPathType:
+    Events:            <none>
+
+    Name:          web-assets-pvc
+    Namespace:     default
+    StorageClass:  manual
+    Status:        Bound
+    Volume:        web-assets-pv
+    Labels:        <none>
+    Annotations:   pv.kubernetes.io/bind-completed: yes
+                   pv.kubernetes.io/bound-by-controller: yes
+    Finalizers:    [kubernetes.io/pvc-protection]
+    Capacity:      256Mi
+    Access Modes:  RWO
+    VolumeMode:    Filesystem
+    Used By:       web-server
+    Events:        <none>
+    
+    ```
+    
+  - Now create a new file inside the pod mount directory
+    ```yaml
+    $ k exec -it web-server -- bash
+    root@web-server:/# echo "newfile">> /usr/share/nginx/html/nginx.txt
+    root@web-server:/# cat /usr/share/nginx/html/nginx.txt
+    newfile 
+    ```
+    
+  - verify the file exists in the hostnode
+    ```yaml
+    $ docker exec -it 0b162e3e3f31 bash
+    root@kind-worker:/# cd /tmp/
+    root@kind-worker:/tmp# ls
+    web-data
+    root@kind-worker:/tmp# cd web-data/
+    root@kind-worker:/tmp/web-data# ls
+    nginx.txt  
+    ```
+    
+  - Delete the pod, and pvc
+    ```yaml
+    pod "web-server" deleted from default namespace
+    persistentvolumeclaim "web-assets-pvc" deleted from default namespace
+    ```
+    
+  - check the PV status
+    ```yaml
+    Name:            web-assets-pv
+    Labels:          <none>
+    Annotations:     pv.kubernetes.io/bound-by-controller: yes
+    Finalizers:      [kubernetes.io/pv-protection]
+    StorageClass:    manual
+    Status:          Released
+    Claim:           default/web-assets-pvc
+    Reclaim Policy:  Retain
+    Access Modes:    RWO
+    VolumeMode:      Filesystem
+    Capacity:        256Mi
+    Node Affinity:   <none>
+    Message:
+    Source:
+        Type:          HostPath (bare host directory volume)
+        Path:          /tmp/web-data
+        HostPathType:
+    Events:            <none>
+
+    $ k get pv
+    NAME            CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS     CLAIM                    STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+    web-assets-pv   256Mi      RWO            Retain           Released   default/web-assets-pvc   manual         <unset>                          3m58s
+
+    ```
+    
+  - Attach a new pvc to the same PV
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"    
+    ```
+    
+  - check the pvc status
+    ```yaml
+    $ k get pvc
+    NAME             STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+    web-assets-pvc   Pending                                      manual         <unset>                 2s
+    
+        $ k describe pvc
+    Name:          web-assets-pvc
+    Namespace:     default
+    StorageClass:  manual
+    Status:        Pending
+    Volume:
+    Labels:        <none>
+    Annotations:   <none>
+    Finalizers:    [kubernetes.io/pvc-protection]
+    Capacity:
+    Access Modes:
+    VolumeMode:    Filesystem
+    Used By:       <none>
+    Events:
+      Type     Reason              Age   From                         Message
+      ----     ------              ----  ----                         -------
+      Warning  ProvisioningFailed  5s    persistentvolume-controller  storageclass.storage.k8s.io "manual" not found
+    ```
+
+  - Data still exists in the hostnode
+    ```yaml
+    $ docker exec -it 0b162e3e3f31 bash
+    root@kind-worker:/# cd  /tmp/web-data/
+    root@kind-worker:/tmp/web-data# lks
+    bash: lks: command not found
+    root@kind-worker:/tmp/web-data# ls
+     f1.txt  'manual file'   nginx.txt
+    root@kind-worker:/tmp/web-data# ls
+     f1.txt  'manual file'   nginx.txt
+    root@kind-worker:/tmp/web-data# ls -ltr
+    total 4
+    -rw-r--r-- 1 root root 8 Feb 10 11:21  nginx.txt
+    -rw-r--r-- 1 root root 0 Feb 10 11:23  f1.txt
+    -rw-r--r-- 1 root root 0 Feb 10 11:23 'manual file'
+    root@kind-worker:/tmp/web-data#
+    
+    ```
+
+  - Final thoughts
+    
+    1. Why the "StorageClass not found" error?
+       Even though you are doing static provisioning, the PVC sees storageClassName: manual. It looks for a StorageClass object named manual to see if it should try to create a volume for you. Since that object doesn't exist, it throws a warning.
+       
+       However, that's not what's stopping the binding. The real reason is the PV Status.
+       
+    2. The "Released" Block
+       It will show Status: Released.
+
+        Here is why your new PVC is Pending:
+        
+        When a PV has a Retain policy and its associated PVC is deleted, the PV moves to Released.
+        
+        A Released PV is NOT Available.
+        
+        It still contains a "memory" of the old PVC in its configuration (the claimRef).
+        
+        Kubernetes refuses to bind a new PVC to a Released PV because it wants to protect the data. It assumes the Admin needs to check the data before making the volume "Available" for someone else.
+
+    3. Solution
+       - Edit the PV: kubectl edit pv <pv-name>
+         - Find the claimRef block: It will look something like this:
+         - Delete the entire claimRef section
+         - Save and exit.
+       - What happens next: As soon as you remove the claimRef, the PV status will flip from Released to Available. Since your new PVC is already sitting there in Pending, the controller will immediately pair them up. If you have not deleted the old content from the hostPath node then the new pods also will be able to see the older contents
+         ```yaml
+          $ k edit pv web-assets-pv
+          persistentvolume/web-assets-pv edited
+          
+          $ k get pv
+          NAME            CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+          web-assets-pv   256Mi      RWO            Retain           Available           manual         <unset>                          17m
+          
+          $ k get pvc
+          NAME             STATUS   VOLUME          CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+          web-assets-pvc   Bound    web-assets-pv   256Mi      RWO            manual         <unset>                 13m
+          
+          $ k get pv
+          NAME            CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                    STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+          web-assets-pv   256Mi      RWO            Retain           Bound    default/web-assets-pvc   manual         <unset>                          18m
+          
+          $ k create -f pod.yaml
+          pod/web-server created
+          
+          $ k exec -it web-server -- bash
+          root@web-server:/# cd /usr/share/nginx/html/
+          root@web-server:/usr/share/nginx/html# ls
+           f1.txt  'manual file'   nginx.txt        
+         ```
+          
+</details>
+
+<details>
+  <summary> Try to bind 2 pvc onto same PV</summary>
+
+  - create a pv
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: web-assets-pv
+    spec:
+      capacity:
+        storage: 256Mi
+      volumeMode: Filesystem
+      accessModes:
+        - ReadWriteOnce
+      persistentVolumeReclaimPolicy: Retain
+      storageClassName: manual
+      hostPath:
+        path: /tmp/web-data
+    
+    ```
+  - create 2 pvc on same yaml
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"
+    ---
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc-2
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"
+    
+    ```
+  - verify the status
+    ```yaml
+    kName:            web-assets-pv
+    Labels:          <none>
+    Annotations:     <none>
+    Finalizers:      [kubernetes.io/pv-protection]
+    StorageClass:    manual
+    Status:          Available
+    Claim:
+    Reclaim Policy:  Retain
+    Access Modes:    RWO
+    VolumeMode:      Filesystem
+    Capacity:        256Mi
+    Node Affinity:   <none>
+    Message:
+    Source:
+        Type:          HostPath (bare host directory volume)
+        Path:          /tmp/web-data
+        HostPathType:
+    Events:            <none>
+    ```
+
+    ```yaml
+    Name:          web-assets-pvc
+    Namespace:     default
+    StorageClass:  manual
+    Status:        Bound
+    Volume:        web-assets-pv
+    Labels:        <none>
+    Annotations:   pv.kubernetes.io/bind-completed: yes
+                   pv.kubernetes.io/bound-by-controller: yes
+    Finalizers:    [kubernetes.io/pvc-protection]
+    Capacity:      256Mi
+    Access Modes:  RWO
+    VolumeMode:    Filesystem
+    Used By:       <none>
+    Events:        <none>
+    
+    
+    Name:          web-assets-pvc-2
+    Namespace:     default
+    StorageClass:  manual
+    Status:        Pending
+    Volume:
+    Labels:        <none>
+    Annotations:   <none>
+    Finalizers:    [kubernetes.io/pvc-protection]
+    Capacity:
+    Access Modes:
+    VolumeMode:    Filesystem
+    Used By:       <none>
+    Events:
+      Type     Reason              Age              From                         Message
+      ----     ------              ----             ----                         -------
+      Warning  ProvisioningFailed  0s (x2 over 4s)  persistentvolume-controller  storageclass.storage.k8s.io "manual" not found
+        
+    ```
+
+    - One pvc will be successfully bounded to the PV
+    - the another PVC will fail
+</details>
+
+<details>
+  <summary>How do you change the Reclaim Policy of a PV that is already live/active?</summary>
+
+  - By performing the patch on the Persistentvolume object
+    ```yaml
+    $ kubectl patch pv <name> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}')
+    ```
+</details>
+
+<details>
+  <summary>How do I make an AWS EBS volume ReadWriteMany?</summary>
+  - You can't." You would have to switch to a service like AWS EFS (NFS) to get RWX capabilities
+
+</details>
+
+<details>
+  <summary>You have a PV that is marked as ReadWriteOnce. You have two different Pods (Pod A and Pod B). Both Pods use the same PVC.</summary>
+
+  - Create a PV and PVC
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: web-assets-pv
+    spec:
+      capacity:
+        storage: 256Mi
+      volumeMode: Filesystem
+      accessModes:
+        - ReadWriteOnce
+      persistentVolumeReclaimPolicy: Retain
+      storageClassName: manual
+      hostPath:
+        path: /tmp/web-data
+    ---    
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"
+    
+    ```
+  - Create 2 pods
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        run: try
+      name: try
+    spec:
+      nodeName: kind-worker
+      containers:
+      - image: nginx
+        name: try
+        volumeMounts:
+          - name: pvc-volume
+            mountPath: /usr/share/nginx/html
+      volumes:
+        - name: pvc-volume
+          persistentVolumeClaim:
+            claimName: web-assets-pvc
+    
+    ---
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        run: try-2
+      name: try-2
+    spec:
+      nodeName: kind-worker
+      containers:
+      - image: nginx
+        name: try-2
+        volumeMounts:
+          - name: pvc-volume
+            mountPath: /usr/share/nginx/html
+      volumes:
+        - name: pvc-volume
+          persistentVolumeClaim:
+            claimName: web-assets-pvc
+    
+    ```
+    
+  - Check pod status
+    ```yaml
+    $ k get pods -owide
+    NAME    READY   STATUS    RESTARTS   AGE     IP            NODE          NOMINATED NODE   READINESS GATES
+    try     1/1     Running   0          3m37s   10.244.1.26   kind-worker   <none>           <none>
+    try-2   1/1     Running   0          3m37s   10.244.1.27   kind-worker   <none>           <none>
+        
+    ```
+
+  - Results
+    - Once means "One Node," not "One Pod."
+    - Case 1: Same Node (SUCCESS)
+      Since the hardware (the volume) is plugged into the "motherboard" of that specific node, any number of Pods living on that node can share the mount point. The Linux kernel handles the file locking between the processes.
+    - Case 2: Different Nodes (FAILURE)
+      If the scheduler tries to put Pod B on Node 2, Pod B will get stuck in ContainerCreating. If you run kubectl describe pod, you will see a Multi-Attach error.
+       
+      Error: Multi-Attach error for volume "pv-name" Volume is already used by pod "pod-a" on node "node-1"
+</details>
+
+<details>
+  <summary>what is RWOP.</summary>
+
+  - Before ReadWriteOncePod existed, ReadWriteOnce (RWO) had a loophole: it allowed multiple Pods to write to the same disk as long as they were on the same node
+  - If you use ReadWriteOncePod:
+    - Only one Pod in the entire cluster can use that volume.
+    - If a second Pod tries to start (even on the same node), Kubernetes will block it.
+    - This is used for critical databases where even two local processes writing to the same data might cause corruption.
+      
+  - Create a PV and PVC with Accessmode ReadWriteOncePod
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: web-assets-pv
+    spec:
+      capacity:
+        storage: 256Mi
+      volumeMode: Filesystem
+      accessModes:
+        - ReadWriteOncePod
+      persistentVolumeReclaimPolicy: Retain
+      storageClassName: manual
+      hostPath:
+        path: /tmp/once-pod
+    ---
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOncePod
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"
+        
+    ```
+  - create a pod-1
+    ```yaml
+    $ cat pod-2.yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: pod-1
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: web-assets-pvc
+    
+    ```
+
+    ```yaml
+    $ k get pods -owide
+    NAME    READY   STATUS    RESTARTS   AGE     IP            NODE          NOMINATED NODE   READINESS GATES
+    pod-1   1/1     Running   0          2m28s   10.244.1.33   kind-worker   <none>           <none>
+    ```
+    
+  - create a conflicting pod-2
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: pod-2
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: web-assets-pvc
+    
+    ```
+  - pod-2 will be in pending state with below warning
+    ```yaml
+    $ k get pods -owide
+    NAME    READY   STATUS    RESTARTS   AGE     IP            NODE          NOMINATED NODE   READINESS GATES
+    pod-1   1/1     Running   0          2m28s   10.244.1.33   kind-worker   <none>           <none>
+    pod-2   0/1     Pending   0          115s    <none>        <none>        <none>           <none>
+        
+    ```
+    ```yaml
+    $ k describe pod pod-2
+    Name:             pod-2
+    Namespace:        default
+    Priority:         0
+    Service Account:  default
+    Node:             <none>
+    Labels:           <none>
+    Annotations:      <none>
+    Status:           Pending
+    IP:
+    IPs:              <none>
+    Containers:
+      nginx:
+        Image:        nginx
+        Port:         <none>
+        Host Port:    <none>
+        Environment:  <none>
+        Mounts:
+          /data from data (rw)
+          /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-77bd8 (ro)
+    Conditions:
+      Type           Status
+      PodScheduled   False
+    Volumes:
+      data:
+        Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)
+        ClaimName:  web-assets-pvc
+        ReadOnly:   false
+      kube-api-access-77bd8:
+        Type:                    Projected (a volume that contains injected data from multiple sources)
+        TokenExpirationSeconds:  3607
+        ConfigMapName:           kube-root-ca.crt
+        Optional:                false
+        DownwardAPI:             true
+    QoS Class:                   BestEffort
+    Node-Selectors:              <none>
+    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                                 node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+    Events:
+      Type     Reason            Age   From               Message
+      ----     ------            ----  ----               -------
+      Warning  FailedScheduling  9s    default-scheduler  0/3 nodes are available: 1 node(s) had untolerated taint(s), 2 node(s) unavailable due to PersistentVolumeClaim with ReadWriteOncePod access mode already in-use by another pod. no new claims to deallocate, preemption: 0/3 nodes are available: 1 Preemption is not helpful for scheduling, 2 No preemption victims found for incoming pod.
+        
+    ```
+</details>
+
+<details>
+  <summary>How do you prevent a data corruption issue where a secondary Pod starts up before the first one has finished shutting down (like during a rolling update)?</summary>
+
+  - ReadWriteOncePod. It ensures that at no point in time can two Pods ever touch that disk simultaneously
+    
+</details>
+
+<details>
+  <summary>We switched our Database Deployment to use ReadWriteOncePod for safety. Now, whenever we update the image, the new Pod stays 'Pending' forever and the old Pod never dies. What’s happening?</summary>
+
+  - This is a Deployment Deadlock. By default, a Deployment starts a new Pod (maxSurge) before killing the old one. Because the PVC is RWOP, the scheduler sees the old Pod is still using the volume and refuses to start the new one. Since the new one can't start and pass health checks, the old one is never killed. To fix this, we must set the Deployment strategy to type: Recreate so the old Pod is killed first, releasing the volume for the new one.
+    
+</details>
+
+<details>
+  <summary>If I have a StatefulSet with 3 replicas and a volumeClaimTemplate using RWOP, will the pods start?</summary>
+
+  - yes, they will. In a StatefulSet, each replica gets its own unique PVC. Since each PVC is only being used by one specific Pod (e.g., web-0 uses data-web-0), RWOP won't block them. RWOP only blocks multiple pods trying to use the same PVC
+    
+</details>
+  
+<details>
+  <summary> can PVC ask for multiple accessmodes?</summary>
+
+  - You can list multiple access modes in your PersistentVolumeClaim (PVC) definition, but the actual binding and usage depend heavily on what the storage provider supports and how the volume is ultimately mounted.
+  - create pv and pvc
+    ```yaml
+    apiVersion: v1
+    kind: PersistentVolume
+    metadata:
+      name: web-assets-pv
+    spec:
+      capacity:
+        storage: 256Mi
+      volumeMode: Filesystem
+      accessModes:
+        - ReadWriteOnce
+        - ReadWriteMany
+      persistentVolumeReclaimPolicy: Retain
+      storageClassName: manual
+      hostPath:
+        path: /tmp/once-pod
+    ---
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: web-assets-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+        - ReadWriteMany
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 200Mi
+      storageClassName: "manual"
+    ```
+  - check the status of pv and pvc
+    ```yaml
+    $ k get pv,pvc
+    NAME                             CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                    STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+    persistentvolume/web-assets-pv   256Mi      RWO,RWX        Retain           Bound    default/web-assets-pvc   manual         <unset>                          21s
+    
+    NAME                                   STATUS   VOLUME          CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+    persistentvolumeclaim/web-assets-pvc   Bound    web-assets-pv   256Mi      RWO,RWX        manual         <unset>                 5s
+    ---
+    $ k get pvc -oyaml
+    apiVersion: v1
+    items:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        annotations:
+          pv.kubernetes.io/bind-completed: "yes"
+          pv.kubernetes.io/bound-by-controller: "yes"
+        creationTimestamp: "2026-02-10T12:50:34Z"
+        finalizers:
+        - kubernetes.io/pvc-protection
+        name: web-assets-pvc
+        namespace: default
+        resourceVersion: "303799"
+        uid: 7b238272-cfa9-495c-bdc3-f652904aebfd
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        - ReadWriteMany
+        resources:
+          requests:
+            storage: 200Mi
+        storageClassName: manual
+        volumeMode: Filesystem
+        volumeName: web-assets-pv
+      status:
+        accessModes:
+        - ReadWriteOnce
+        - ReadWriteMany
+        capacity:
+          storage: 256Mi
+        phase: Bound
+    kind: List
+    metadata:
+      resourceVersion: ""
+
+    ```
+    
+  - 2. How Binding Works
+    Kubernetes treats the accessModes list as a set of requirements.
+    
+    The Match: The PVC will only bind to a PersistentVolume (PV) that has at least all the modes you listed.
+    
+    The Limitation: Even if a PV supports both, most storage backends (like AWS EBS or Azure Disk) only allow the volume to be mounted in one mode at a time for a specific Pod.
+
+</details>
 
 ## storage class scenarios
+
+<details>
+  <summary>Can you expand a volume that is currently in use by a Pod?</summary>
+
+  1. storgae class must have allowVolumeExpansion set to true
+  2. Create a PVC with request capacity of 100Mi
+  3. Create a pod. Pod will be in running state
+  4. Now, change the PVC storage request from 100Mi to 200Mi and wait for the bvolume expanison to completed
+  5. Once the volume is expanded you can verify if the pod data storage has increased by runnign df -h command
+
+</details>
+
 
 <details>
   <summary>What happens if you deploy a StorageClass with no-provisioner</summary>
