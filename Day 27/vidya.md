@@ -1,5 +1,54 @@
 # storage
 
+## Extra questions
+
+<details>
+  <summary>For a hostPath volume, if the node itself goes down, what happens to the data?</summary>
+
+- The data remains on the physical disk of that specific machine. However, because hostPath is not network storage, Kubernetes cannot "move" that data to a different node.
+- If the Pod is rescheduled to a new node, it will start with an empty directory (or whatever is at that path on the new node). The original data is "trapped" on the offline node.
+  
+</details>
+
+<details>
+  <summary>What happens if two containers in the same pod write to the same PVC?</summary>
+
+  - Both containers can write simultaneously. Kubernetes does not manage "file locking."
+  - f they write to the same file, they will likely corrupt it or overwrite each other’s data. If they write to different files in the same volume, it works perfectly (this is a common way to use "Sidecar" containers).
+    
+</details>
+
+<details>
+  <summary>If a PVC requests 5GB and is bound to a 7GB PV, can another PVC use the remaining 2GB?</summary>
+
+  - No, In Kubernetes, the binding between a PVC and a PV is 1-to-1. Once a PV is "Bound," it is fully consumed by that specific PVC, even if the PVC only uses a fraction of the available space. The remaining 2GB is "lost"/wasted.
+    
+</details>
+
+<details>
+  <summary>What happens if I try to delete a PV before the PVC or Pod?</summary>
+
+  - The PV will enter the Terminating state but will not disappear.
+  - This is due to Storage Object Protection. The kubernetes.io/pv-protection finalizer ensures a PV is not deleted while it is still bound to a PVC. Once you delete the PVC, the PV will finally vanish.
+    
+</details>
+
+<details>
+  <summary>When a PV is created, is it available on all nodes?</summary>
+
+  - The PV object is cluster-scoped (visible to all), but the actual storage may not be.
+  - Cloud/Network PVs (EBS, EFS, NFS): Effectively available to all nodes
+  - Local/hostPath PVs: Physically exist on one node only. Even though you can see the "object" from any node, only the specific node with the disk can actually mount it.
+</details>
+
+<details>
+  <summary>What happens if a Pod is created on Node A, but the PV (Immediate binding) is on Node B?</summary>
+  - The Pod will stay in ContainerCreating (not Pending) and eventually fail with a FailedMount error.
+  - With VolumeBindingMode: Immediate, the PVC binds to the PV before the Pod is even scheduled. If the Scheduler then accidentally places the Pod on a node that can't reach that specific PV (like a hostPath on a different node), the Pod is stuck.
+  - This is why we use WaitForFirstConsumer—it tells K8s: "Don't bind the storage until you know exactly where the Pod is going to land."
+</details>
+
+
 ## PV scenarios
 
 <details>
