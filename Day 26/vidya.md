@@ -712,14 +712,22 @@ Results
   /data # ls
   cpu_limit
   
-  /data # ls -ltr
-  total 0
-  lrwxrwxrwx    1 root     root            16 Feb 11 12:17 cpu_limit -> ..data/cpu_limit
-  /data # ls
-  cpu_limit
+  /data # ls -ltra
+  total 4
+  lrwxrwxrwx    1 root     root            16 Feb 11 12:25 cpu_limit -> ..data/cpu_limit
+  lrwxrwxrwx    1 root     root            31 Feb 11 12:25 ..data -> ..2026_02_11_12_25_36.992697048
+  drwxr-xr-x    2 root     root            60 Feb 11 12:25 ..2026_02_11_12_25_36.992697048
+  drwxrwxrwt    3 root     root           100 Feb 11 12:25 .
+  drwxr-xr-x    1 root     root          4096 Feb 11 12:25 ..
+  
   /data # cat cpu_limit
   1
+
+  /data # cat ..2026_02_11_12_25_36.992697048/cpu_limit
+  1
   ```
+  - Using symbolic links enables dynamic atomic refresh of the metadata; updates are written to a new temporary directory, and the ..data symlink is updated atomically using rename(2).
+  - 
 </details>
 
 **Note**
