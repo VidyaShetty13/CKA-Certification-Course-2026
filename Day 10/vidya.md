@@ -44,8 +44,8 @@
   <summary>what happens if both maxUnavailable and maxSurge is specified as 0</summary>
 
   - It wont allow
-    - # * spec.strategy.rollingUpdate.maxUnavailable: Invalid value: "0%": may not be 0 when `maxSurge` is 0
-    - # * spec.strategy.rollingUpdate.maxUnavailable: Invalid value: 0: may not be 0 when `maxSurge` is 0
+    - spec.strategy.rollingUpdate.maxUnavailable: Invalid value: "0%": may not be 0 when `maxSurge` is 0
+    - spec.strategy.rollingUpdate.maxUnavailable: Invalid value: 0: may not be 0 when `maxSurge` is 0
     
 </details>
 
@@ -88,7 +88,81 @@
 
 <details>
   <summary>Zero-Downtime with 1 Replica</summary>
+
+  ```yaml
+  $ k create deploy nginx --image nginx:1.16.0 --replicas=1
+  deployment.apps/nginx created
+  ```
+
+  ```yaml
+  # Edit the deployment to change the maxUnavailable from 25% to 0
+  $ k get deploy nginx  -oyaml |grep -A3 strategy
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  ```
+
+  ```yaml
+  $ k set image deploy/nginx nginx=nginx:wrong
+  deployment.apps/nginx image updated
+
+  $ k get pods -w
+  NAME                     READY   STATUS             RESTARTS   AGE
+  nginx-64bc5c74c6-ffkxg   1/1     Running            0          82s
+  nginx-69754ff47c-zrns6   0/1     ImagePullBackOff   0          44s
+  ```
   
 </details>
+
+<details>
+  <summary> maxUnavailable:25% maxSurge:25% replicas:4</summary>
+
+  Calculation for your 4 replicas:
+    - Desired Replicas: 4
+    - MaxSurge (25% of 4): 1
+    - Total allowed pods during update: 4 + 1 = 5
+
+  Surge: Kubernetes wants to be fast, so it creates one new pod (nginx-69754ff47c-2cjpc) because maxSurge allows 1 extra. Total is now 5.
+  Availability: Since your maxUnavailable is also 25% (1 pod), Kubernetes terminated one old pod to make room for a second new pod.
+
+  Result: * 3 "Old" pods are still Running.
+  - 2 "New" pods are stuck in ImagePullBackOff.
+  - Total: $3 + 2 = 5$.
+
+  - The rollout is now stalled. Kubernetes will not kill any more "Old" pods because it needs at least 3 healthy ones to satisfy the "max 1 unavailable" rule, and it won't create any more "New" pods because it has already hit the "max 5 total" limit.
+  - What if I have only 1 replica? 25% of 1 is 0.25!" Kubernetes always rounds up for maxSurge and rounds down for maxUnavailable
+  - Desired Replicas	maxSurge (25%)	maxUnavailable (25%)	Max Pods during Update
+  - 1	                1	              0	                    2
+  - 4	                1	              1	                    5
+  - 10	              3	              2	                    13
+
+  ```yaml
+  $ k create deployment nginx --image nginx --replicas=4
+  deployment.apps/nginx created
+
+  $ k get pods -w
+  NAME                     READY   STATUS    RESTARTS   AGE
+  nginx-64bc5c74c6-b2thf   1/1     Running   0          4s
+  nginx-64bc5c74c6-d262h   1/1     Running   0          4s
+  nginx-64bc5c74c6-d8hcb   1/1     Running   0          4s
+  nginx-64bc5c74c6-ztk74   1/1     Running   0          4s
+
+  $ k set image deploy/nginx nginx=nginx:wrong
+  deployment.apps/nginx image updated
+
+  $ k get pods
+  NAME                     READY   STATUS             RESTARTS   AGE
+  nginx-64bc5c74c6-b2thf   1/1     Running            0          4m10s
+  nginx-64bc5c74c6-d262h   1/1     Running            0          4m10s
+  nginx-64bc5c74c6-d8hcb   1/1     Running            0          4m10s
+  nginx-69754ff47c-2cjpc   0/1     ImagePullBackOff   0          4m
+  nginx-69754ff47c-cmvhb   0/1     ImagePullBackOff   0          4m
+  
+  ```
+</details>
+
+
+
 
 ## Errors
