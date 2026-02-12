@@ -294,6 +294,11 @@
     replicaset.apps/nginx-64bc5c74c6   0         0         0       5m1s
     
     ```
+
+    Results
+    - By default, Kubernetes is "eager." If you change the image, it starts a rollout. If you then change an environment variable, it stops that rollout and starts a new one. If you then change a ConfigMap, it starts a third one.
+    - This wastes CPU, memory, and time.
+    - kubectl rollout resume deploy/my-app: K8s triggers one single rollout that applies all three changes at once.
 </details>
 
 
