@@ -1,4 +1,4 @@
-# Deployment Strategies
+# Deployment 
 
 ## Extra questions
 
@@ -162,7 +162,140 @@
   ```
 </details>
 
+<details>
+  <summary>update a deployment with multiple specific requirements (e.g., change image and add an environment variable and set a resource limit) and specifies it should be done in a single rollout</summary>
+
+  - Create a deployment
+    ```yaml
+    $ k create deploy nginx --image nginx:1.16.0 --replicas=4
+    deployment.apps/nginx created
+
+    $ k get pods
+    NAME                     READY   STATUS    RESTARTS   AGE
+    nginx-64bc5c74c6-7fwwx   1/1     Running   0          46s
+    nginx-64bc5c74c6-968m9   1/1     Running   0          46s
+    nginx-64bc5c74c6-mrqj9   1/1     Running   0          46s
+    nginx-64bc5c74c6-sqtm4   1/1     Running   0          46s
+
+    $ k get rs
+    NAME               DESIRED   CURRENT   READY   AGE
+    nginx-64bc5c74c6   4         4         4       64s
+
+    ```
+  - Pause the rollout
+    ```yaml
+    $ k rollout pause deploy nginx
+    deployment.apps/nginx paused
+    
+    $ k get deploy nginx -oyaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      annotations:
+        deployment.kubernetes.io/revision: "1"
+      creationTimestamp: "2026-02-12T09:10:36Z"
+      generation: 2
+      labels:
+        app: nginx
+      name: nginx
+      namespace: default
+      resourceVersion: "354544"
+      uid: a12b7109-2c17-47f4-8d23-5251c334304a
+    spec:
+      paused: true
+      progressDeadlineSeconds: 600
+      replicas: 4
+      revisionHistoryLimit: 10
+      selector:
+        matchLabels:
+          app: nginx
+      strategy:
+        rollingUpdate:
+          maxSurge: 25%
+          maxUnavailable: 25%
+        type: RollingUpdate
+      template:
+        metadata:
+          labels:
+            app: nginx
+        spec:
+          containers:
+          - image: nginx:1.16.0
+            imagePullPolicy: IfNotPresent
+            name: nginx
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          schedulerName: default-scheduler
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+    status:
+      availableReplicas: 4
+      conditions:
+      - lastTransitionTime: "2026-02-12T09:10:37Z"
+        lastUpdateTime: "2026-02-12T09:10:37Z"
+        message: Deployment has minimum availability.
+        reason: MinimumReplicasAvailable
+        status: "True"
+        type: Available
+      - lastTransitionTime: "2026-02-12T09:11:57Z"
+        lastUpdateTime: "2026-02-12T09:11:57Z"
+        message: Deployment is paused
+        reason: DeploymentPaused
+        status: Unknown
+        type: Progressing
+      observedGeneration: 2
+      readyReplicas: 4
+      replicas: 4
+      updatedReplicas: 4
+    
+    ``` 
+  - Make all the updates to the deployment
+    ```yaml
+    $ k set image deploy/nginx nginx=nginx:1.17.0
+    deployment.apps/nginx image updated
+    
+    $ kubectl set resources deployment/nginx --limits=cpu=200m,memory=512Mi
+    deployment.apps/nginx resource requirements updated
+    
+    $ kubectl set env deployment/nginx APP_COLOR=blue
+    deployment.apps/nginx env updated
+    
+    $ k rollout status deploy nginx
+    Waiting for deployment "nginx" rollout to finish: 0 out of 4 new replicas have been updated...
+    
+    $ k get rs
+    NAME               DESIRED   CURRENT   READY   AGE
+    nginx-64bc5c74c6   4         4         4       4m13s
+    ```
+    
+  - Then resume the rollout
+    ```yaml
+    $ k rollout resume deploy/nginx
+    deployment.apps/nginx resumed
+    
+    $ k rollout status deploy nginx
+    deployment "nginx" successfully rolled out
+    
+    $ k get pods,deploy,rs
+    NAME                         READY   STATUS    RESTARTS   AGE
+    pod/nginx-5976d474d8-h5xt5   1/1     Running   0          9s
+    pod/nginx-5976d474d8-kjmck   1/1     Running   0          11s
+    pod/nginx-5976d474d8-pzqf6   1/1     Running   0          9s
+    pod/nginx-5976d474d8-zx7lz   1/1     Running   0          11s
+    
+    NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+    deployment.apps/nginx   4/4     4            4           5m1s
+    
+    NAME                               DESIRED   CURRENT   READY   AGE
+    replicaset.apps/nginx-5976d474d8   4         4         4       11s
+    replicaset.apps/nginx-64bc5c74c6   0         0         0       5m1s
+    
+    ```
+</details>
 
 
 
-## Errors
+
